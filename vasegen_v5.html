@@ -1,0 +1,1374 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>PNG → Twist Vase Generator (Three.js r160+)</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <style>
+    :root{
+      --sidebar-width: 380px;
+      --sidebar-min: 280px;
+      --sidebar-max: 720px;
+      --accent: #7c3aed;
+      --bg: #0b0c10;
+      --panel: #121319;
+      --panel-2: #191a22;
+      --text: #e8e9ef;
+      --muted: #9aa1aa;
+      --good: #16a34a;
+      --warn: #d97706;
+      --bad:  #ef4444;
+      --grid: #2a2d38;
+    }
+    *{ box-sizing: border-box }
+    html, body { height:100%; margin:0; background:var(--bg); color:var(--text); font:14px/1.35 system-ui, Segoe UI, Roboto, Helvetica, Arial, sans-serif; }
+
+    /* patched grid so sidebar can shrink */
+    .layout{
+      display:grid;
+      grid-template-columns: minmax(var(--sidebar-min), var(--sidebar-width)) 6px 1fr;
+      grid-template-rows: 100%;
+      height:100%;
+      overflow:hidden;
+    }
+    aside{
+      background:linear-gradient(180deg, var(--panel), var(--panel-2));
+      border-right:1px solid #1e2130;
+      overflow:auto;
+      padding:12px 12px 18px 12px;
+      min-width:0;
+    }
+    .splitter{
+      cursor: col-resize;
+      background: #1d2030;
+      border-right: 1px solid #0f1018;
+      border-left: 1px solid #0f1018;
+    }
+    main{ position:relative; }
+    #viewport{ position:absolute; inset:0; }
+
+    h2{
+      margin: 8px 0 6px;
+      font-size: 13px;
+      letter-spacing: 0.02em;
+      text-transform: uppercase;
+      color: var(--muted);
+    }
+    .row{
+      display:flex; gap:8px; align-items:center; margin:6px 0;
+      min-width:0;
+    }
+    .row > label{ flex:0 0 clamp(84px, 28%, 120px); color:var(--muted); font-size:12px; }
+    .row > input[type="range"]{ flex:1; min-width:0; }
+    .row > * { min-width:0; }
+    input, select, button{
+      background:#0f1018;
+      color:var(--text);
+      border:1px solid #26283a;
+      padding:6px 8px;
+      border-radius:8px;
+      outline:none;
+    }
+    input[type="number"]{ width:100px }
+    input[type="color"]{
+      padding:0; height:32px; width:48px; border-radius:6px;
+      border:1px solid #3a3d55;
+      background:#000;
+    }
+    input[type="file"]{ width:100%; max-width:100%; min-width:0; }
+
+    button{
+      background: linear-gradient(180deg, #1a1c29, #141622);
+      border:1px solid #2e3150;
+      cursor:pointer;
+      transition: box-shadow .15s ease;
+    }
+    button:hover{ box-shadow:0 0 0 2px rgba(124,58,237,.25) inset; }
+    button.primary{
+      background: linear-gradient(180deg, #6d28d9, #5b21b6);
+      border-color:#7c3aed;
+    }
+    .grid{
+      display:grid;
+      grid-template-columns: 1fr;
+      gap:10px;
+      min-width:0;
+    }
+    .card{
+      background:#0d0f17;
+      border:1px solid #23263a;
+      border-radius:12px;
+      padding:10px;
+      min-width:0;
+    }
+    .hint{ color:var(--muted); font-size:12px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+    .pill{
+      display:inline-flex; align-items:center; gap:6px;
+      background:#0f1220; border:1px solid #2f3350; color:#c3c6d4;
+      border-radius:999px; padding:4px 8px; font-size:12px; margin:4px 6px 0 0;
+      white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
+    }
+
+    .editor{
+      background:#0b0d15;
+      border:1px solid #2a2d40;
+      border-radius:10px;
+      position:relative;
+      height:180px;
+      cursor:crosshair;
+      user-select:none;
+      touch-action:none;
+      min-width:0; width:100%;
+    }
+    .legend{ display:flex; justify-content:space-between; margin-top:6px; color:var(--muted); font-size:11px; }
+    .img-preview{
+      display:grid; grid-template-columns: minmax(0,1fr) minmax(0, 220px); align-items:center; gap:8px;
+      min-width:0;
+    }
+    canvas.preview{
+      width:100%; height:160px; object-fit:contain; background:#0a0c13; border:1px dashed #2b2e44; border-radius:8px;
+    }
+    .row-tight{ gap:6px }
+    .two-col{ display:grid; grid-template-columns: 1fr 1fr; gap:10px; }
+    .stat{ color:#cbd5e1; font-size:12px }
+    .stat b{ color:#e2e8f0 }
+    .footer-actions{
+      display:flex; gap:8px; justify-content:space-between; align-items:center; margin-top:8px;
+      position:sticky; bottom:0; background:linear-gradient(180deg, rgba(13,15,23,.0), rgba(13,15,23,.8) 30%, rgba(13,15,23,1));
+      padding-top:6px;
+    }
+    .env-note{ color:#8ab4ff; font-size:12px }
+    .badge{ display:inline-block; padding:2px 6px; font-size:11px; border:1px solid #3b3f5c; border-radius:6px; color:#b5bdd3; background:#0e1020; }
+    .debug-canvas{
+  width:100%;
+  height:220px;
+  background:#0a0c13;
+  border:1px dashed #2b2e44;
+  border-radius:8px;
+}
+  </style>
+
+  <!-- Import map for ES modules -->
+  <script type="importmap">
+  {
+    "imports": {
+      "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+      "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+    }
+  }
+  </script>
+
+  <!-- Robust polygon boolean ops (UMD global: ClipperLib) -->
+  <script src="https://cdn.jsdelivr.net/npm/clipper-lib@6.4.2/clipper.js"></script>
+</head>
+<body>
+  <div class="layout">
+    <aside>
+      <div class="grid">
+        <div class="card">
+          <h2>Image (PNG → solid where black)</h2>
+          <div class="img-preview">
+            <canvas id="imgPreview" class="preview" width="320" height="160"></canvas>
+            <div style="display:flex; flex-direction:column; gap:6px;">
+              <input id="pngInput" type="file" accept="image/png,image/*" />
+              <span class="badge">Tip</span>
+              <span class="hint">Use a transparent/white background and black foreground for the desired solid region.</span>
+            </div>
+          </div>
+          <div class="row">
+            <label>Black Threshold</label>
+            <input id="threshold" type="range" min="0" max="255" value="40" />
+            <span id="thresholdVal" class="pill">40</span>
+          </div>
+          <div class="row">
+            <label>Pixel Step</label>
+            <input id="step" type="range" min="1" max="8" value="2" />
+            <span id="stepVal" class="pill">2</span>
+          </div>
+          <div class="row">
+            <label>Simplify Tolerance</label>
+            <input id="simplify" type="range" min="0" max="6" step="0.1" value="1.2" />
+            <span id="simplifyVal" class="pill">1.2</span>
+          </div>
+          <div class="row">
+            <label>Smooth (Chaikin)</label>
+            <input id="smooth" type="range" min="0" max="6" value="2" />
+            <span id="smoothVal" class="pill">2</span>
+          </div>
+        </div>
+
+        <div class="card">
+          <h2>Geometry</h2>
+          <div class="row">
+            <label>Height</label>
+            <input id="height" type="number" min="5" max="400" step="1" value="120" />
+            <span class="hint">mm</span>
+          </div>
+          <div class="row">
+            <label>Steps (Z)</label>
+            <input id="steps" type="range" min="10" max="300" value="140" />
+            <span id="stepsVal" class="pill">140</span>
+          </div>
+          <div class="row">
+            <label>Curve Segments</label>
+            <input id="segments" type="range" min="6" max="64" value="24" />
+            <span id="segmentsVal" class="pill">24</span>
+          </div>
+          <div class="row">
+            <label>Color</label>
+            <input id="color" type="color" value="#8e77ff" />
+            <span class="hint">PBR material</span>
+          </div>
+        </div>
+
+        <div class="card">
+          <h2>Settings</h2>
+          <label class="row" style="justify-content:space-between;">
+            <span>Live Bezier updates</span>
+            <input id="liveBezier" type="checkbox" checked />
+          </label>
+        </div>
+
+        <div class="card">
+          <h2>Scale Curve (y = absolute scale)</h2>
+          <div id="scaleEditor" class="editor" title="Left/drag to move • Drag handles to shape curve • Double-click empty to add • Right-click to remove"></div>
+          <div class="legend"><span>z = 0</span><span>z = 1</span></div>
+          <div class="two-col">
+            <div class="row row-tight"><label>Y Min</label><input id="scaleYMin" type="number" step="0.1" value="0.4" /></div>
+            <div class="row row-tight"><label>Y Max</label><input id="scaleYMax" type="number" step="0.1" value="2.0" /></div>
+          </div>
+          <div class="hint">Default anchors: (0, 1.0), (0.25, 1.1), (1.0, 1.4)</div>
+        </div>
+
+        <div class="card">
+          <h2>Twist Curve (y = degrees)</h2>
+          <div id="twistEditor" class="editor" title="Left/drag to move • Drag handles • Double-click empty to add • Right-click to remove"></div>
+          <div class="legend"><span>z = 0</span><span>z = 1</span></div>
+          <div class="two-col">
+            <div class="row row-tight"><label>Deg Min</label><input id="twistYMin" type="number" step="5" value="-360" /></div>
+            <div class="row row-tight"><label>Deg Max</label><input id="twistYMax" type="number" step="5" value="360" /></div>
+          </div>
+          <div class="row">
+            <label>Twist Gain</label>
+            <input id="twistGain" type="range" min="0" max="300" value="100" />
+            <span id="twistGainVal" class="pill">1.00×</span>
+          </div>
+        </div>
+     <div class="card">
+          <h2>Path Debug</h2>
+          <canvas id="pathDebug" class="debug-canvas" height="220"></canvas>
+          <div class="row" style="gap:14px">
+            <label style="display:flex;align-items:center;gap:6px"><input id="dbgIdx" type="checkbox"> Indices</label>
+            <label style="display:flex;align-items:center;gap:6px"><input id="dbgXing" type="checkbox" checked> Intersections</label>
+            <label style="display:flex;align-items:center;gap:6px"><input id="dbgLen" type="checkbox"> Edge length</label>
+            <button id="dbgSvg" type="button">Export SVG</button>
+          </div>
+          <div class="hint" id="dbgInfo">—</div>
+        </div>
+        <div class="card">
+          <h2>Status</h2>
+          <div class="stat" id="status">Load a PNG to start.</div>
+          <div class="footer-actions">
+            <button id="resetView">Reset View</button>
+            <button id="exportSTL" class="primary">Export STL</button>
+          </div>
+          <div class="env-note">Scene uses <b>RoomEnvironment</b>, PBR material, directional+hemi lights.</div>
+        </div>
+      </div>
+    </aside>
+    <div class="splitter" id="splitter" title="Drag to resize the control pane"></div>
+    <main>
+      <div id="viewport"></div>
+    </main>
+  </div>
+
+  <script type="module">
+    import * as THREE from 'three';
+    import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+    import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
+    import { STLExporter } from 'three/addons/exporters/STLExporter.js';
+    import { mergeBufferGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
+
+    // --------------------------
+    // DOM refs
+    // --------------------------
+    const els = {
+      pngInput: document.getElementById('pngInput'),
+      imgPreview: document.getElementById('imgPreview'),
+      threshold: document.getElementById('threshold'),
+      thresholdVal: document.getElementById('thresholdVal'),
+      step: document.getElementById('step'),
+      stepVal: document.getElementById('stepVal'),
+      simplify: document.getElementById('simplify'),
+      simplifyVal: document.getElementById('simplifyVal'),
+      smooth: document.getElementById('smooth'),
+      smoothVal: document.getElementById('smoothVal'),
+      height: document.getElementById('height'),
+      steps: document.getElementById('steps'),
+      stepsVal: document.getElementById('stepsVal'),
+      segments: document.getElementById('segments'),
+      segmentsVal: document.getElementById('segmentsVal'),
+      color: document.getElementById('color'),
+      scaleEditor: document.getElementById('scaleEditor'),
+      twistEditor: document.getElementById('twistEditor'),
+      scaleYMin: document.getElementById('scaleYMin'),
+      scaleYMax: document.getElementById('scaleYMax'),
+      twistYMin: document.getElementById('twistYMin'),
+      twistYMax: document.getElementById('twistYMax'),
+      twistGain: document.getElementById('twistGain'),
+      twistGainVal: document.getElementById('twistGainVal'),
+      status: document.getElementById('status'),
+      resetView: document.getElementById('resetView'),
+      exportSTL: document.getElementById('exportSTL'),
+      viewport: document.getElementById('viewport'),
+      splitter: document.getElementById('splitter'),
+      liveBezier: document.getElementById('liveBezier'),
+      pathDebug: document.getElementById('pathDebug'),
+  dbgIdx: document.getElementById('dbgIdx'),
+  dbgXing: document.getElementById('dbgXing'),
+  dbgLen: document.getElementById('dbgLen'),
+  dbgSvg: document.getElementById('dbgSvg'),
+  dbgInfo: document.getElementById('dbgInfo'),
+    };
+let lastLoopsMM = [];   // pre-repair, centered mm loops
+let lastBounds = null;  // {minX,maxX,minY,maxY}
+    // --------------------------
+    // Resizable sidebar
+    // --------------------------
+    (() => {
+      let dragging = false, startX = 0, startW = 0;
+      const onDown = (e) => {
+        dragging = true; startX = e.clientX;
+        const cs = getComputedStyle(document.documentElement);
+        startW = parseFloat(cs.getPropertyValue('--sidebar-width'));
+        document.body.style.cursor = 'col-resize';
+      };
+      const onMove = (e) => {
+        if (!dragging) return;
+        let w = startW + (e.clientX - startX);
+        const min = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--sidebar-min'));
+        const max = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--sidebar-max'));
+        w = Math.max(min, Math.min(max, w));
+        document.documentElement.style.setProperty('--sidebar-width', `${w}px`);
+        renderer.setSize(els.viewport.clientWidth, els.viewport.clientHeight);
+      };
+      const onUp = () => { dragging = false; document.body.style.cursor = 'default'; };
+      els.splitter.addEventListener('pointerdown', onDown);
+      window.addEventListener('pointermove', onMove);
+      window.addEventListener('pointerup', onUp);
+    })();
+
+    // --------------------------
+    // Three.js scene
+    // --------------------------
+    const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false });
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    renderer.setSize(els.viewport.clientWidth, els.viewport.clientHeight);
+    renderer.outputColorSpace = THREE.SRGBColorSpace;
+    els.viewport.appendChild(renderer.domElement);
+
+    const scene = new THREE.Scene();
+    const pmrem = new THREE.PMREMGenerator(renderer);
+    scene.environment = pmrem.fromScene(new RoomEnvironment(renderer), 0.04).texture;
+    scene.background = new THREE.Color(0x0b0c10);
+
+    const camera = new THREE.PerspectiveCamera(45, els.viewport.clientWidth / els.viewport.clientHeight, 0.1, 5000);
+    camera.position.set(220, 180, 220);
+
+    const controls = new OrbitControls(camera, renderer.domElement);
+    controls.enableDamping = true;
+    controls.target.set(0, 60, 0);
+
+    const hemi = new THREE.HemisphereLight(0xffffff, 0x444444, 0.6);
+    hemi.position.set(0, 400, 0);
+    scene.add(hemi);
+
+    const dir = new THREE.DirectionalLight(0xffffff, 0.8);
+    dir.position.set(200, 300, 200);
+    scene.add(dir);
+
+    const grid = new THREE.PolarGridHelper(400, 16, 8, 64, 0x2a2d38, 0x23263a);
+    grid.position.y = 0;
+    scene.add(grid);
+
+    let currentMesh = null;
+    let baseGeometryPositions = null;
+
+    const material = new THREE.MeshPhysicalMaterial({
+      color: new THREE.Color(els.color.value),
+      metalness: 0.05,
+      roughness: 0.6,
+      clearcoat: 0.05,
+      transmission: 0.0,
+      envMapIntensity: 0.9
+    });
+
+    function render(){
+      controls.update();
+      renderer.render(scene, camera);
+      requestAnimationFrame(render);
+    }
+    render();
+
+    window.addEventListener('resize', () => {
+      camera.aspect = els.viewport.clientWidth / els.viewport.clientHeight;
+      camera.updateProjectionMatrix();
+      renderer.setSize(els.viewport.clientWidth, els.viewport.clientHeight);
+    });
+
+    // --------------------------
+    // PNG handling
+    // --------------------------
+    const imgCanvas = document.createElement('canvas');
+    const imgCtx = imgCanvas.getContext('2d', { willReadFrequently: true });
+
+    function drawPreview(image) {
+      const ctx = els.imgPreview.getContext('2d');
+      ctx.clearRect(0,0,els.imgPreview.width, els.imgPreview.height);
+      const scale = Math.min(els.imgPreview.width / image.width, els.imgPreview.height / image.height);
+      const w = Math.floor(image.width * scale);
+      const h = Math.floor(image.height * scale);
+      const x = Math.floor((els.imgPreview.width - w) / 2);
+      const y = Math.floor((els.imgPreview.height - h) / 2);
+      ctx.imageSmoothingEnabled = true;
+      ctx.imageSmoothingQuality = 'high';
+      ctx.drawImage(image, x, y, w, h);
+      ctx.strokeStyle = '#2b2e44';
+      ctx.strokeRect(0.5, 0.5, els.imgPreview.width-1, els.imgPreview.height-1);
+    }
+
+    function loadImageFromFile(file){
+      return new Promise((resolve, reject) => {
+        const img = new Image();
+        img.onload = () => resolve(img);
+        img.onerror = reject;
+        img.src = URL.createObjectURL(file);
+      });
+    }
+
+    function imageToBinaryGrid(image, threshold = 40, step = 2){
+      imgCanvas.width = image.width;
+      imgCanvas.height = image.height;
+      imgCtx.clearRect(0,0,image.width,image.height);
+      imgCtx.drawImage(image, 0, 0);
+      const data = imgCtx.getImageData(0,0,image.width,image.height).data;
+
+      const W = Math.floor(image.width / step);
+      const H = Math.floor(image.height / step);
+      const grid = new Uint8Array(W * H);
+
+      for (let y = 0; y < H; y++){
+        for (let x = 0; x < W; x++){
+          const sx = x * step;
+          const sy = y * step;
+          const idx = (sy * image.width + sx) * 4;
+          const r = data[idx], g = data[idx+1], b = data[idx+2], a = data[idx+3];
+          const lum = 0.2126*r + 0.7152*g + 0.0722*b;
+          const isBlack = (a > 10) && (lum < threshold);
+          grid[y * W + x] = isBlack ? 1 : 0;
+        }
+      }
+      return { grid, W, H, step };
+    }
+
+    // Marching Squares with simple ambiguity handling
+    function extractContoursMS(binary, W, H){
+      const segs = [];
+      const addSeg = (ax, ay, bx, by) => { segs.push({ ax, ay, bx, by }); };
+
+      for (let y = 0; y < H - 1; y++){
+        for (let x = 0; x < W - 1; x++){
+          const p0 = binary[y*W + x];
+          const p1 = binary[y*W + (x+1)];
+          const p2 = binary[(y+1)*W + (x+1)];
+          const p3 = binary[(y+1)*W + x];
+          const idx = (p0?1:0) | ((p1?1:0)<<1) | ((p2?1:0)<<2) | ((p3?1:0)<<3);
+          if (idx === 0 || idx === 15) continue;
+
+          const xm = x + 0.5, ym = y + 0.5;
+          const left   = { x,     y: ym };
+          const right  = { x: x+1, y: ym };
+          const top    = { x: xm, y };
+          const bottom = { x: xm, y: y+1 };
+
+          switch(idx){
+            case 1: case 14: addSeg(left.x, left.y, top.x, top.y); break;
+            case 2: case 13: addSeg(top.x, top.y, right.x, right.y); break;
+            case 3: case 12: addSeg(left.x, left.y, right.x, right.y); break;
+            case 4: case 11: addSeg(right.x, right.y, bottom.x, bottom.y); break;
+            case 5:
+              if (p0 + p1 + p2 + p3 >= 2) { addSeg(top.x, top.y, right.x, right.y); addSeg(left.x, left.y, bottom.x, bottom.y); }
+              else { addSeg(left.x, left.y, top.x, top.y); addSeg(bottom.x, bottom.y, right.x, right.y); }
+              break;
+            case 6: case 9:  addSeg(top.x, top.y, bottom.x, bottom.y); break;
+            case 7: case 8:  addSeg(left.x, left.y, bottom.x, bottom.y); break;
+            case 10:
+              if (p0 + p1 + p2 + p3 >= 2) { addSeg(left.x, left.y, top.x, top.y); addSeg(bottom.x, bottom.y, right.x, right.y); }
+              else { addSeg(top.x, top.y, right.x, right.y); addSeg(left.x, left.y, bottom.x, bottom.y); }
+              break;
+          }
+        }
+      }
+
+      const key = (x,y) => `${x.toFixed(3)},${y.toFixed(3)}`;
+      const map = new Map();
+      for (const s of segs){
+        const a = key(s.ax, s.ay), b = key(s.bx, s.by);
+        if (!map.has(a)) map.set(a, []);
+        if (!map.has(b)) map.set(b, []);
+        map.get(a).push({ x: s.bx, y: s.by, key: b });
+        map.get(b).push({ x: s.ax, y: s.ay, key: a });
+      }
+
+      const used = new Set();
+      const loops = [];
+      for (const s of segs){
+        const k0 = key(s.ax, s.ay), k1 = key(s.bx, s.by);
+        const edgeId = `${k0}->${k1}`;
+        const edgeIdR = `${k1}->${k0}`;
+        if (used.has(edgeId) || used.has(edgeIdR)) continue;
+
+        const loop = [{ x: s.ax, y: s.ay }];
+        let cur = { x: s.bx, y: s.by }, prevKey = k0;
+        used.add(edgeId); used.add(edgeIdR);
+        let guard=0;
+        while (guard++ < 20000){
+          loop.push(cur);
+          const neighbors = map.get(key(cur.x, cur.y));
+          if (!neighbors || neighbors.length === 0) break;
+          const next = neighbors.find(n => key(n.x,n.y) !== prevKey);
+          if (!next) break;
+          const e0 = `${key(cur.x,cur.y)}->${key(next.x,next.y)}`;
+          const e1 = `${key(next.x,next.y)}->${key(cur.x,cur.y)}`;
+          if (used.has(e0) || used.has(e1)) break;
+          used.add(e0); used.add(e1);
+          prevKey = key(cur.x, cur.y);
+          cur = { x: next.x, y: next.y };
+          if (Math.hypot(loop[0].x - cur.x, loop[0].y - cur.y) < 1e-6) break;
+        }
+        if (loop.length >= 3) loops.push(loop);
+      }
+      return loops;
+    }
+
+    // Simplify (Douglas–Peucker)
+    function simplifyDP(points, tol){
+      if (tol <= 0 || points.length < 3) return points.slice();
+      const sqTol = tol*tol;
+      const newPts = [points[0]];
+      function sqSegDist(p,a,b){
+        let x=a.x, y=a.y; let dx=b.x-x, dy=b.y-y;
+        if (dx!==0 || dy!==0){
+          const t = ((p.x-x)*dx+(p.y-y)*dy)/(dx*dx+dy*dy);
+          if (t>1){ x=b.x; y=b.y; }
+          else if (t>0){ x+=dx*t; y+=dy*t; }
+        }
+        dx=p.x-x; dy=p.y-y; return dx*dx+dy*dy;
+      }
+      function step(pts, first, last, out){
+        let maxDist = sqTol, index = -1;
+        for (let i=first+1; i<last; i++){
+          const dist = sqSegDist(pts[i], pts[first], pts[last]);
+          if (dist > maxDist){ index=i; maxDist=dist; }
+        }
+        if (index >= 0){
+          if (index-first > 1) step(pts, first, index, out);
+          out.push(pts[index]);
+          if (last-index > 1) step(pts, index, last, out);
+        }
+      }
+      const out = [];
+      step(points, 0, points.length - 1, out);
+      newPts.push(...out, points[points.length-1]);
+      return newPts;
+    }
+
+    // Chaikin smoothing
+    function chaikin(points, iterations=1){
+      let pts = points;
+      for (let k=0; k<iterations; k++){
+        const res = [];
+        for (let i=0; i<pts.length; i++){
+          const p0 = pts[i];
+          const p1 = pts[(i+1)%pts.length];
+          const Q = { x: 0.75*p0.x + 0.25*p1.x, y: 0.75*p0.y + 0.25*p1.y };
+          const R = { x: 0.25*p0.x + 0.75*p1.x, y: 0.25*p0.y + 0.75*p1.y };
+          res.push(Q, R);
+        }
+        pts = res;
+      }
+      return pts;
+    }
+
+    function ringArea2D(r){
+  let a=0; for(let i=0;i<r.length;i++){ const p=r[i], q=r[(i+1)%r.length]; a += p.x*q.y - p.y*q.x; } return 0.5*a;
+}
+function boundsOfLoops(loops){
+  let minX=Infinity,minY=Infinity,maxX=-Infinity,maxY=-Infinity;
+  for (const L of loops) for (const p of L){
+    if (p.x<minX) minX=p.x; if (p.x>maxX) maxX=p.x;
+    if (p.y<minY) minY=p.y; if (p.y>maxY) maxY=p.y;
+  }
+  return {minX,maxX,minY,maxY};
+}
+function segsOfRing(r){ const s=[]; for(let i=0;i<r.length;i++){ const a=r[i], b=r[(i+1)%r.length]; s.push([a,b]); } return s; }
+function segIntersect(a,b,c,d,eps=1e-9){
+  const x1=a.x,y1=a.y,x2=b.x,y2=b.y,x3=c.x,y3=c.y,x4=d.x,y4=d.y;
+  const den = (x1-x2)*(y3-y4)-(y1-y2)*(x3-x4);
+  if (Math.abs(den) < eps) return null;
+  const t = ((x1-x3)*(y3-y4)-(y1-y3)*(x3-x4))/den;
+  const u = ((x1-x3)*(y1-y2)-(y1-y3)*(x1-x2))/den;
+  if (t>eps && t<1-eps && u>eps && u<1-eps) return { x: x1 + t*(x2-x1), y: y1 + t*(y2-y1) };
+  return null;
+}
+function findIntersections(loops, hardCap=200000){
+  const hits=[]; let checked=0;
+  for (let li=0;li<loops.length;li++){
+    const S=segsOfRing(loops[li]);
+    for (let i=0;i<S.length;i++){
+      const [a,b]=S[i];
+      for (let j=i+1;j<S.length;j++){
+        if (j===i || j===i+1 || (i===0&&j===S.length-1)) continue;
+        const hit = segIntersect(a,b, S[j][0],S[j][1]);
+        if (hit) hits.push({pt:hit, li, i, j});
+        if (++checked > hardCap) return {hits, truncated:true};
+      }
+    }
+    for (let lk=li+1;lk<loops.length;lk++){
+      const T=segsOfRing(loops[lk]);
+      for (let i=0;i<S.length;i++){
+        const [a,b]=S[i];
+        for (let j=0;j<T.length;j++){
+          const hit = segIntersect(a,b, T[j][0],T[j][1]);
+          if (hit) hits.push({pt:hit, li, i, other:lk, j});
+          if (++checked > hardCap) return {hits, truncated:true};
+        }
+      }
+    }
+  }
+  return {hits, truncated:false};
+}
+function sizeDebugCanvas(){
+  const c=els.pathDebug; if (!c) return;
+  const dpr=Math.min(window.devicePixelRatio||1,2);
+  const w=c.clientWidth||1, h=c.clientHeight||1;
+  c.width=Math.max(10,Math.floor(w*dpr)); c.height=Math.max(10,Math.floor(h*dpr)); c._dpr=dpr;
+}
+function drawPathDebug(){
+  const c=els.pathDebug; if (!c) return;
+  sizeDebugCanvas();
+  const ctx=c.getContext('2d');
+  ctx.clearRect(0,0,c.width,c.height);
+  if (!lastLoopsMM || !lastLoopsMM.length){ if (els.dbgInfo) els.dbgInfo.textContent='—'; return; }
+
+  const b= lastBounds || boundsOfLoops(lastLoopsMM);
+  const margin=20*(c._dpr||1);
+  const sx=(c.width-2*margin)/Math.max(1e-6,(b.maxX-b.minX));
+  const sy=(c.height-2*margin)/Math.max(1e-6,(b.maxY-b.minY));
+  const s=Math.min(sx,sy);
+  const ox=margin - b.minX*s, oy=margin - b.minY*s;
+
+  // grid
+  ctx.save(); ctx.strokeStyle='#23263a'; ctx.lineWidth=1*(c._dpr||1);
+  for (let i=1;i<6;i++){ const x=i*(c.width/6), y=i*(c.height/6);
+    ctx.beginPath(); ctx.moveTo(x,0); ctx.lineTo(x,c.height); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(0,y); ctx.lineTo(c.width,y); ctx.stroke();
+  } ctx.restore();
+
+  const colorsCCW='#16a34a', colorsCW='#d97706';
+  const tinyEdges=[], colinearPts=[];
+  for (let li=0; li<lastLoopsMM.length; li++){
+    const R=lastLoopsMM[li]; if (R.length<2) continue;
+    const area=ringArea2D(R); const stroke = area>0 ? colorsCCW : colorsCW;
+
+    ctx.save();
+    ctx.lineWidth=2*(c._dpr||1); ctx.strokeStyle=stroke;
+    ctx.beginPath();
+    for (let i=0;i<R.length;i++){
+      const p=R[i]; const x=ox + p.x*s, y=c.height - (oy + p.y*s);
+      if (i===0) ctx.moveTo(x,y); else ctx.lineTo(x,y);
+    } ctx.closePath(); ctx.stroke(); ctx.restore();
+
+    // vertices + indices
+    ctx.save(); ctx.fillStyle='#cbd5e1';
+    for (let i=0;i<R.length;i++){
+      const p=R[i]; const x=ox + p.x*s, y=c.height - (oy + p.y*s);
+      ctx.beginPath(); ctx.arc(x,y,3*(c._dpr||1),0,Math.PI*2); ctx.fill();
+      if (els.dbgIdx && els.dbgIdx.checked){
+        ctx.fillStyle='#9aa1aa'; ctx.font=`${10*(c._dpr||1)}px ui-monospace, monospace`;
+        ctx.fillText(String(i), x+4*(c._dpr||1), y-4*(c._dpr||1)); ctx.fillStyle='#cbd5e1';
+      }
+    } ctx.restore();
+
+    if (els.dbgLen && els.dbgLen.checked){
+      for (let i=0;i<R.length;i++){
+        const a=R[i], bPt=R[(i+1)%R.length];
+        const len=Math.hypot(bPt.x-a.x,bPt.y-a.y);
+        if (len < 0.2) tinyEdges.push({li,i,mid:{x:(a.x+bPt.x)/2,y:(a.y+bPt.y)/2}});
+        const A=R[(i-1+R.length)%R.length], B=R[i], C=R[(i+1)%R.length];
+        const cross=(B.x-A.x)*(C.y-B.y)-(B.y-A.y)*(C.x-B.x);
+        if (Math.abs(cross) < 1e-4) colinearPts.push({li,i});
+      }
+    }
+  }
+
+  // intersections
+  let info = `loops: ${lastLoopsMM.length}`;
+  if (els.dbgXing && els.dbgXing.checked){
+    const {hits,truncated} = findIntersections(lastLoopsMM);
+    ctx.save(); ctx.fillStyle='#ef4444';
+    for (const h of hits){
+      const x=ox + h.pt.x*s, y=c.height - (oy + h.pt.y*s);
+      ctx.beginPath(); ctx.arc(x,y,4*(c._dpr||1),0,Math.PI*2); ctx.fill();
+    } ctx.restore();
+    info += ` · intersections: ${hits.length}${truncated?' (trunc)':''}`;
+  }
+  if (els.dbgLen && els.dbgLen.checked){
+    ctx.save(); ctx.fillStyle='#f59e0b';
+    for (const t of tinyEdges){
+      const x=ox + t.mid.x*s, y=c.height - (oy + t.mid.y*s);
+      ctx.beginPath(); ctx.arc(x,y,3*(c._dpr||1),0,Math.PI*2); ctx.fill();
+    } ctx.restore();
+    info += ` · tiny edges: ${tinyEdges.length} · ~colinear: ${colinearPts.length}`;
+  }
+  if (els.dbgInfo) els.dbgInfo.textContent = info;
+}
+function exportLoopsAsSVG(loops){
+  if (!loops || !loops.length) return;
+  const b=boundsOfLoops(loops); const pad=10;
+  const w=(b.maxX-b.minX)+pad*2, h=(b.maxY-b.minY)+pad*2;
+  let d='';
+  for (const R of loops){
+    if (!R.length) continue;
+    d += `M ${R[0].x-b.minX+pad} ${h-(R[0].y-b.minY+pad)}`;
+    for (let i=1;i<R.length;i++){
+      d += ` L ${R[i].x-b.minX+pad} ${h-(R[i].y-b.minY+pad)}`;
+    }
+    d += ' Z ';
+  }
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}" viewBox="0 0 ${w} ${h}">
+    <path d="${d}" fill="none" stroke="#7c3aed" stroke-width="1"/>
+  </svg>`;
+  const blob = new Blob([svg], {type:'image/svg+xml'});
+  const url = URL.createObjectURL(blob);
+  const a=document.createElement('a'); a.href=url; a.download='vase-path.svg'; a.click();
+  URL.revokeObjectURL(url);
+}
+
+    // ---- Helpers for path repair (Clipper) ----
+    function areaVec2(arr){
+      let a=0; for(let i=0,n=arr.length;i<n;i++){ const p=arr[i], q=arr[(i+1)%n]; a += p.x*q.y - p.y*q.x; } return 0.5*a;
+    }
+    function ensureCCWVec2(arr){ return areaVec2(arr) > 0 ? arr : arr.slice().reverse(); }
+    function ensureCWVec2(arr){  return areaVec2(arr) < 0 ? arr : arr.slice().reverse(); }
+    function cleanRing(r, eps = 1e-4){
+      if (!r || r.length < 3) return [];
+      const a = [];
+      for (let i=0;i<r.length;i++){
+        const p=r[i], q=r[(i+1)%r.length];
+        if (Math.hypot(q.x-p.x, q.y-p.y) > eps) a.push(p);
+      }
+      if (a.length < 3) return [];
+      const b = [];
+      for (let i=0;i<a.length;i++){
+        const A=a[(i-1+a.length)%a.length], B=a[i], C=a[(i+1)%a.length];
+        const cross=(B.x-A.x)*(C.y-B.y)-(B.y-A.y)*(C.x-B.x);
+        if (Math.abs(cross) > eps*eps) b.push(B);
+      }
+      return b.length >= 3 ? b : a;
+    }
+
+function repairLoopsWithUnionClipper(loopsMM) {
+  if (!globalThis.ClipperLib) return [];
+
+  // --- helpers to normalize Clipper variants ---
+  const getChildren = (node) => {
+    if (!node) return [];
+    if (typeof node.Childs === 'function') return node.Childs();      // some builds expose Childs()
+    if (Array.isArray(node.Childs)) return node.Childs;               // some expose .Childs array
+    if (Array.isArray(node.m_Childs)) return node.m_Childs;           // others store in m_Childs
+    return [];
+  };
+  const getContourPath = (nodeOrPath) => {
+    // Accept already-an-array (path) or a node object
+    if (Array.isArray(nodeOrPath)) return nodeOrPath;
+    if (!nodeOrPath) return [];
+    if (typeof nodeOrPath.Contour === 'function') return nodeOrPath.Contour(); // method
+    if (Array.isArray(nodeOrPath.Contour)) return nodeOrPath.Contour;          // property
+    if (Array.isArray(nodeOrPath.m_polygon)) return nodeOrPath.m_polygon;      // internal field
+    return [];
+  };
+  const isHoleNode = (node) => {
+    if (!node) return false;
+    if (typeof node.IsHole === 'function') return node.IsHole();
+    if (typeof node.IsHoleNode === 'function') return node.IsHoleNode();
+    if ('IsHole' in node) return !!node.IsHole;
+    return false;
+  };
+
+  const SCALE = 1000; // 0.001 mm precision
+  const subject = loopsMM
+    .map(cleanRing)
+    .filter(r => r.length >= 3)
+    .map(r => r.map(p => ({ X: Math.round(p.x * SCALE), Y: Math.round(p.y * SCALE) })));
+
+  if (!subject.length) return [];
+
+  const clipper = new ClipperLib.Clipper();
+  clipper.AddPaths(subject, ClipperLib.PolyType.ptSubject, /*closed=*/true);
+
+  const tree = new ClipperLib.PolyTree();
+  clipper.Execute(
+    ClipperLib.ClipType.ctUnion,
+    tree,
+    ClipperLib.PolyFillType.pftNonZero,
+    ClipperLib.PolyFillType.pftNonZero
+  );
+
+  const shapes = [];
+  const toVec2 = (path) => {
+    const p = getContourPath(path);
+    if (!Array.isArray(p)) return [];
+    return p.map(pt => new THREE.Vector2(pt.X / SCALE, pt.Y / SCALE));
+  };
+
+  function addShapeFromOuter(node) {
+    let outer = toVec2(node);
+    if (outer.length < 3) return;
+    outer = ensureCCWVec2(outer);
+    const shape = new THREE.Shape(outer);
+
+    // Holes directly under this outer
+    for (const h of getChildren(node)) {
+      if (!isHoleNode(h)) continue;
+      let hole = toVec2(h);
+      if (hole.length < 3) continue;
+      hole = ensureCWVec2(hole);
+      shape.holes.push(new THREE.Path(hole));
+
+      // Islands (solids) inside this hole → separate shapes
+      for (const island of getChildren(h)) {
+        if (!isHoleNode(island)) addShapeFromOuter(island);
+      }
+    }
+    shapes.push(shape);
+  }
+
+  // Roots (non-hole children of tree)
+  for (const child of getChildren(tree)) {
+    if (!isHoleNode(child)) addShapeFromOuter(child);
+  }
+  return shapes;
+}
+
+    // --------------------------
+    // Curve Editor (Bezier)
+    // --------------------------
+    class BezierEditor {
+      constructor(container, opts){
+        this.el = container;
+        this.canvas = document.createElement('canvas');
+        this.canvas.width = container.clientWidth;
+        this.canvas.height = container.clientHeight;
+        this.ctx = this.canvas.getContext('2d');
+        this.yMin = opts.yMin; this.yMax = opts.yMax;
+        this.onCommit = opts.onCommit;
+        this.onInput = opts.onInput || null;
+
+        this.points = (opts.initial || [
+          { x:0.00, y:1.0, hr:{x: 0.10, y: 0}, hl:{x:-0.10, y: 0} },
+          { x:0.25, y:1.1, hr:{x: 0.10, y: 0}, hl:{x:-0.10, y: 0} },
+          { x:1.00, y:1.4, hr:{x: 0.10, y: 0}, hl:{x:-0.10, y: 0} },
+        ]).map(p => ({...p, hr:{...p.hr}, hl:{...p.hl}}));
+
+        this.drag = null;
+        this.pixelRatio = Math.min(window.devicePixelRatio || 1, 2);
+
+        container.appendChild(this.canvas);
+        new ResizeObserver(()=>this.resize()).observe(container);
+        this.bind();
+        this.draw();
+      }
+      setYRange(min, max){ this.yMin=min; this.yMax=max; this.draw(); if (this.onCommit) this.onCommit(); }
+      resize(){
+        const w = this.el.clientWidth, h = this.el.clientHeight;
+        this.canvas.width = Math.max(10, Math.floor(w * this.pixelRatio));
+        this.canvas.height = Math.max(10, Math.floor(h * this.pixelRatio));
+        this.canvas.style.width = w + 'px';
+        this.canvas.style.height = h + 'px';
+        this.draw();
+      }
+      xToPx(x){ return x * this.canvas.width; }
+      yToPx(y){
+        const t = (y - this.yMin) / (this.yMax - this.yMin);
+        return (1 - t) * this.canvas.height;
+      }
+      pxToX(px){ return px / this.canvas.width; }
+      pxToY(py){
+        const t = 1 - (py / this.canvas.height);
+        return this.yMin + t * (this.yMax - this.yMin);
+      }
+      screenPts(){
+        return this.points.map(p => ({
+          p: { x: this.xToPx(p.x), y: this.yToPx(p.y) },
+          hr: { x: this.xToPx(p.x + p.hr.x), y: this.yToPx(p.y + p.hr.y) },
+          hl: { x: this.xToPx(p.x + p.hl.x), y: this.yToPx(p.y + p.hl.y) },
+        }));
+      }
+      draw(){
+        const ctx = this.ctx;
+        ctx.clearRect(0,0,this.canvas.width, this.canvas.height);
+
+        ctx.save();
+        ctx.strokeStyle = '#23263a';
+        ctx.lineWidth = 1 * this.pixelRatio;
+        const gx = 10, gy = 6;
+        for (let i=1;i<gx;i++){
+          const x = i * this.canvas.width / gx;
+          ctx.beginPath(); ctx.moveTo(x,0); ctx.lineTo(x,this.canvas.height); ctx.stroke();
+        }
+        for (let j=1;j<gy;j++){
+          const y = j * this.canvas.height / gy;
+          ctx.beginPath(); ctx.moveTo(0,y); ctx.lineTo(this.canvas.width,y); ctx.stroke();
+        }
+        ctx.restore();
+
+        this.points.sort((a,b)=>a.x - b.x);
+
+        const sp = this.screenPts();
+        ctx.save();
+        ctx.lineWidth = 2 * this.pixelRatio;
+        ctx.strokeStyle = '#7c3aed';
+        ctx.beginPath();
+        for (let i=0; i<sp.length-1; i++){
+          const a = sp[i], b = sp[i+1];
+          ctx.moveTo(a.p.x, a.p.y);
+          ctx.bezierCurveTo(a.hr.x, a.hr.y, b.hl.x, b.hl.y, b.p.x, b.p.y);
+        }
+        ctx.stroke();
+        ctx.restore();
+
+        ctx.save();
+        ctx.lineWidth = 1 * this.pixelRatio;
+        for (let i=0;i<sp.length;i++){
+          const s = sp[i];
+          ctx.strokeStyle = '#3a3f5f';
+          ctx.beginPath(); ctx.moveTo(s.p.x, s.p.y); ctx.lineTo(s.hr.x, s.hr.y); ctx.stroke();
+          ctx.beginPath(); ctx.moveTo(s.p.x, s.p.y); ctx.lineTo(s.hl.x, s.hl.y); ctx.stroke();
+          ctx.fillStyle = '#2c2f45';
+          ctx.strokeStyle = '#4a4f70';
+          ctx.beginPath(); ctx.arc(s.hr.x, s.hr.y, 5*this.pixelRatio, 0, Math.PI*2); ctx.fill(); ctx.stroke();
+          ctx.beginPath(); ctx.arc(s.hl.x, s.hl.y, 5*this.pixelRatio, 0, Math.PI*2); ctx.fill(); ctx.stroke();
+        }
+        ctx.restore();
+
+        ctx.save();
+        for (let i=0;i<sp.length;i++){
+          const s = sp[i];
+          ctx.fillStyle = '#10121c';
+          ctx.strokeStyle = '#b0b4d0';
+          ctx.lineWidth = 2 * this.pixelRatio;
+          ctx.beginPath(); ctx.arc(s.p.x, s.p.y, 6*this.pixelRatio, 0, Math.PI*2); ctx.fill(); ctx.stroke();
+        }
+        ctx.restore();
+      }
+      valueAt(t){
+        const pts = this.points;
+        if (pts.length === 0) return 1.0;
+        if (t <= pts[0].x) return pts[0].y;
+        if (t >= pts[pts.length-1].x) return pts[pts.length-1].y;
+
+        let i = 0;
+        for (; i<pts.length-1; i++){
+          if (t >= pts[i].x && t <= pts[i+1].x) break;
+        }
+        const a = pts[i], b = pts[i+1];
+        const span = (b.x - a.x) || 1e-6;
+        const u = (t - a.x) / span;
+
+        const tensionA = Math.max(0.05, Math.abs(a.hr.x)) / 0.25;
+        const tensionB = Math.max(0.05, Math.abs(b.hl.x)) / 0.25;
+
+        const y0 = a.y;
+        const y1 = a.y + a.hr.y * (0.8 * tensionA);
+        const y2 = b.y + b.hl.y * (0.8 * tensionB);
+        const y3 = b.y;
+
+        const uu = 1-u;
+        return uu*uu*uu*y0 + 3*uu*uu*u*y1 + 3*uu*u*u*y2 + u*u*u*y3;
+      }
+      bind(){
+        const pickRadius = 10;
+        const findHit = (px, py) => {
+          const sp = this.screenPts();
+          for (let i=0;i<sp.length;i++){
+            const s = sp[i];
+            if (Math.hypot(px - s.p.x, py - s.p.y) <= pickRadius*this.pixelRatio) return { type:'p', index:i };
+            if (Math.hypot(px - s.hr.x, py - s.hr.y) <= pickRadius*this.pixelRatio) return { type:'hr', index:i };
+            if (Math.hypot(px - s.hl.x, py - s.hl.y) <= pickRadius*this.pixelRatio) return { type:'hl', index:i };
+          }
+          return null;
+        };
+
+        const onPointerDown = (e) => {
+          const rect = this.canvas.getBoundingClientRect();
+          const px = (e.clientX - rect.left) * this.pixelRatio;
+          const py = (e.clientY - rect.top) * this.pixelRatio;
+
+          const hit = findHit(px, py);
+          if (hit){
+            this.drag = { ...hit, startX: px, startY: py };
+            return;
+          }
+          if (e.button === 0){
+            const nx = this.pxToX(px);
+            const ny = this.valueAt(nx);
+            const idx = this.points.findIndex(p => p.x > nx);
+            const newP = { x:nx, y:ny, hr:{x:0.1, y:0}, hl:{x:-0.1, y:0} };
+            if (idx === -1) this.points.push(newP);
+            else this.points.splice(idx, 0, newP);
+            this.draw();
+          }
+        };
+        const onPointerMove = (e) => {
+          if (!this.drag) return;
+          const rect = this.canvas.getBoundingClientRect();
+          const px = (e.clientX - rect.left) * this.pixelRatio;
+          const py = (e.clientY - rect.top) * this.pixelRatio;
+          const dx = px - this.drag.startX;
+          const dy = py - this.drag.startY;
+          this.drag.startX = px; this.drag.startY = py;
+
+          const p = this.points[this.drag.index];
+          if (!p) return;
+          if (this.drag.type === 'p'){
+            const nx = this.pxToX(this.xToPx(p.x) + dx);
+            const ny = this.pxToY(this.yToPx(p.y) + dy);
+            p.x = Math.min(1, Math.max(0, nx));
+            p.y = Math.min(this.yMax, Math.max(this.yMin, ny));
+          } else if (this.drag.type === 'hr'){
+            const h = { x: this.xToPx(p.x + p.hr.x) + dx, y: this.yToPx(p.y + p.hr.y) + dy };
+            p.hr.x = this.pxToX(h.x) - p.x;
+            p.hr.y = this.pxToY(h.y) - p.y;
+          } else if (this.drag.type === 'hl'){
+            const h = { x: this.xToPx(p.x + p.hl.x) + dx, y: this.yToPx(p.y + p.hl.y) + dy };
+            p.hl.x = this.pxToX(h.x) - p.x;
+            p.hl.y = this.pxToY(h.y) - p.y;
+          }
+          this.draw();
+          if (this.onInput) this.onInput();
+        };
+        const onPointerUp = () => {
+          if (this.drag && this.onCommit) this.onCommit();
+          this.drag = null;
+        };
+        const onContextMenu = (e) => {
+          e.preventDefault();
+          const rect = this.canvas.getBoundingClientRect();
+          const px = (e.clientX - rect.left) * this.pixelRatio;
+          const py = (e.clientY - rect.top) * this.pixelRatio;
+          const sp = this.screenPts();
+          for (let i=0;i<sp.length;i++){
+            if (Math.hypot(px - sp[i].p.x, py - sp[i].p.y) <= 10*this.pixelRatio){
+              if (this.points.length > 2){
+                this.points.splice(i,1);
+                this.draw();
+                if (this.onCommit) this.onCommit();
+              }
+              break;
+            }
+          }
+        };
+
+        this.canvas.addEventListener('pointerdown', onPointerDown);
+        window.addEventListener('pointermove', onPointerMove);
+        window.addEventListener('pointerup', onPointerUp);
+        this.canvas.addEventListener('contextmenu', onContextMenu);
+      }
+    }
+
+    let _raf = 0;
+    const liveApply = () => { if (_raf) return; _raf = requestAnimationFrame(() => { _raf = 0; applyDeformation(); }); };
+
+    const scaleEditor = new BezierEditor(els.scaleEditor, {
+      yMin: parseFloat(els.scaleYMin.value),
+      yMax: parseFloat(els.scaleYMax.value),
+      initial: [
+        { x:0.00, y:1.0, hr:{x: 0.10, y: 0}, hl:{x:-0.10, y: 0} },
+        { x:0.25, y:1.1, hr:{x: 0.10, y: 0}, hl:{x:-0.10, y: 0} },
+        { x:1.00, y:1.4, hr:{x: 0.10, y: 0}, hl:{x:-0.10, y: 0} },
+      ],
+      onCommit: () => applyDeformation(),
+      onInput: els.liveBezier.checked ? liveApply : null
+    });
+
+    const twistEditor = new BezierEditor(els.twistEditor, {
+      yMin: parseFloat(els.twistYMin.value),
+      yMax: parseFloat(els.twistYMax.value),
+      initial: [
+        { x:0.00, y:0, hr:{x: 0.10, y: 0}, hl:{x:-0.10, y: 0} },
+        { x:1.00, y:180, hr:{x: 0.10, y: 0}, hl:{x:-0.10, y: 0} },
+      ],
+      onCommit: () => applyDeformation(),
+      onInput: els.liveBezier.checked ? liveApply : null
+    });
+
+    els.scaleYMin.addEventListener('change', ()=> scaleEditor.setYRange(parseFloat(els.scaleYMin.value), parseFloat(els.scaleYMax.value)));
+    els.scaleYMax.addEventListener('change', ()=> scaleEditor.setYRange(parseFloat(els.scaleYMin.value), parseFloat(els.scaleYMax.value)));
+    els.twistYMin.addEventListener('change', ()=> twistEditor.setYRange(parseFloat(els.twistYMin.value), parseFloat(els.twistYMax.value)));
+    els.twistYMax.addEventListener('change', ()=> twistEditor.setYRange(parseFloat(els.twistYMin.value), parseFloat(els.twistYMax.value)));
+    els.liveBezier.addEventListener('change', () => {const cb = els.liveBezier.checked ? liveApply : null; scaleEditor.onInput = cb; twistEditor.onInput = cb;});
+
+    // --------------------------
+    // Geometry building (with path repair via Clipper)
+    // --------------------------
+    function buildGeometryFromPNG(image){
+      const threshold = parseInt(els.threshold.value, 10);
+      const step = parseInt(els.step.value, 10);
+      const simplifyTol = parseFloat(els.simplify.value);
+      const smoothIter = parseInt(els.smooth.value, 10);
+
+      const { grid:bin, W, H } = imageToBinaryGrid(image, threshold, step);
+      const loops = extractContoursMS(bin, W, H);
+      if (!loops.length){
+        setStatus('No solid region detected (adjust threshold).', 'warn');
+        return null;
+      }
+
+      // Simplify + smooth
+      const simplified = loops.map(loop => {
+        const L = loop.length;
+        const closed = loop[0].x === loop[L-1]?.x && loop[0].y === loop[L-1]?.y;
+        const pts = closed ? loop.slice(0, L-1) : loop.slice(0);
+        const simp = simplifyDP(pts, simplifyTol);
+        const sm = smoothIter > 0 ? chaikin(simp, smoothIter) : simp;
+        return sm;
+      });
+
+
+      // Center to mm
+      const pixelToMM = 1.0;
+      let minX=Infinity,minY=Infinity,maxX=-Infinity,maxY=-Infinity;
+      for (const loop of simplified){
+        for (const p of loop){
+          if (p.x<minX) minX=p.x; if (p.x>maxX) maxX=p.x;
+          if (p.y<minY) minY=p.y; if (p.y>maxY) maxY=p.y;
+        }
+      }
+      const cx=(minX+maxX)/2, cy=(minY+maxY)/2;
+      const loopsMM = simplified.map(loop => loop.map(p => ({ x:(p.x - cx) * pixelToMM, y:(p.y - cy) * pixelToMM })));
+
+      lastLoopsMM = loopsMM;
+lastBounds = boundsOfLoops(lastLoopsMM);
+
+      // BOOLEAN REPAIR: union to simple polygons with holes
+      const shapes = repairLoopsWithUnionClipper(loopsMM);
+      if (!shapes.length){
+        setStatus('Path repair produced no shapes (adjust threshold/simplify).', 'bad');
+        return null;
+      }
+
+      // Extrude solid
+      const heightMM = parseFloat(els.height.value);
+      const steps = parseInt(els.steps.value, 10);
+      const curveSegments = parseInt(els.segments.value, 10);
+
+      const extrudeSettings = { steps, depth: heightMM, bevelEnabled: false, curveSegments };
+      const geoms = shapes.map(s => new THREE.ExtrudeGeometry(s, extrudeSettings));
+      let geom = geoms.length > 1 ? mergeBufferGeometries(geoms, false) : geoms[0];
+      if (!geom) geom = geoms[0];
+      if (geoms.length > 1) geoms.forEach(g => g.dispose());
+      if (!geom) return null;
+
+      // Center XY
+      geom.computeBoundingBox();
+      const bb = geom.boundingBox;
+      const shift = new THREE.Vector3((bb.min.x + bb.max.x)/2,(bb.min.y + bb.max.y)/2,0);
+      geom.translate(-shift.x, -shift.y, 0);
+
+      // Save base positions pre-deform
+      baseGeometryPositions = geom.attributes.position.array.slice(0);
+      return geom;
+    }
+
+    // Deformation (scale/twist along Z)
+    function applyDeformation(){
+      if (!currentMesh || !baseGeometryPositions) return;
+      const geom = currentMesh.geometry;
+      const pos = geom.attributes.position.array;
+      const heightMM = parseFloat(els.height.value);
+
+      const scaleAt = (zNorm) => Math.max(0.01, scaleEditor.valueAt(zNorm));
+      const twistGain = parseInt(els.twistGain.value, 10) / 100.0;
+      const twistAt = (zNorm) => (twistEditor.valueAt(zNorm) * twistGain) * Math.PI / 180.0;
+
+      for (let i=0; i<pos.length; i+=3){
+        const bx = baseGeometryPositions[i];
+        const by = baseGeometryPositions[i+1];
+        const bz = baseGeometryPositions[i+2];
+
+        const zNorm = Math.min(1, Math.max(0, bz / heightMM));
+
+        const s = scaleAt(zNorm);
+        const ang = twistAt(zNorm);
+
+        const sx = bx * s;
+        const sy = by * s;
+
+        const cos = Math.cos(ang), sin = Math.sin(ang);
+        const rx = sx * cos - sy * sin;
+        const ry = sx * sin + sy * cos;
+
+        pos[i]   = rx;
+        pos[i+1] = ry;
+      }
+      geom.attributes.position.needsUpdate = true;
+      geom.computeVertexNormals();
+      geom.computeBoundingBox();
+      fitCameraToObject(currentMesh, 1.25);
+      updateStatusGeom(geom);
+    }
+
+    function setStatus(msg, level='info'){
+      const color = level==='info' ? 'var(--text)' : level==='warn' ? 'var(--warn)' : level==='bad' ? 'var(--bad)' : 'var(--text)';
+      els.status.innerHTML = `<span style="color:${color}">${msg}</span>`;
+    }
+    function updateStatusGeom(geom){
+      const vcount = geom.attributes.position.count;
+      const tricount = geom.index ? geom.index.count/3 : vcount/3;
+      const bb = geom.boundingBox;
+      const size = new THREE.Vector3(); bb.getSize(size);
+      els.status.innerHTML =
+        `Verts: <b>${vcount.toLocaleString()}</b> &nbsp; | &nbsp; Tris: <b>${Math.floor(tricount).toLocaleString()}</b> &nbsp; | &nbsp; Size: <b>${size.x.toFixed(1)}×${size.y.toFixed(1)}×${size.z.toFixed(1)} mm</b>`;
+    }
+
+    function fitCameraToObject(object, zoom = 1.2){
+      const box = new THREE.Box3().setFromObject(object);
+      const size = new THREE.Vector3();
+      const center = new THREE.Vector3();
+      box.getSize(size);
+      box.getCenter(center);
+
+      const maxSize = Math.max(size.x, size.y, size.z);
+      const fitHeightDistance = maxSize / (2 * Math.atan((Math.PI * camera.fov / 180) / 2));
+      const fitWidthDistance = fitHeightDistance / camera.aspect;
+      const distance = zoom * Math.max(fitHeightDistance, fitWidthDistance);
+
+      controls.target.copy(center);
+      camera.position.copy(center).add(new THREE.Vector3(distance, distance * 0.8, distance));
+      camera.near = distance / 100;
+      camera.far = distance * 100;
+      camera.updateProjectionMatrix();
+      controls.update();
+    }
+
+    // --------------------------
+    // UI events
+    // --------------------------
+    els.threshold.addEventListener('input', () => { els.thresholdVal.textContent = els.threshold.value; tryRebuildFromImage(); });
+    els.step.addEventListener('input', () => { els.stepVal.textContent = els.step.value; tryRebuildFromImage(); });
+    els.simplify.addEventListener('input', () => { els.simplifyVal.textContent = els.simplify.value; tryRebuildFromImage(); });
+    els.smooth.addEventListener('input', () => { els.smoothVal.textContent = els.smooth.value; tryRebuildFromImage(); });
+
+    els.height.addEventListener('change', () => tryRebuildFromImage());
+    els.steps.addEventListener('input', () => { els.stepsVal.textContent = els.steps.value; tryRebuildFromImage(); });
+    els.segments.addEventListener('input', () => { els.segmentsVal.textContent = els.segments.value; tryRebuildFromImage(); });
+
+    els.color.addEventListener('input', () => { material.color.set(els.color.value); });
+
+    els.twistGain.addEventListener('input', () => {
+      els.twistGainVal.textContent = (parseInt(els.twistGain.value,10)/100).toFixed(2) + '×';
+    });
+    els.twistGain.addEventListener('change', () => applyDeformation());
+    if (els.dbgIdx)  els.dbgIdx.addEventListener('change', drawPathDebug);
+    if (els.dbgXing) els.dbgXing.addEventListener('change', drawPathDebug);
+    if (els.dbgLen)  els.dbgLen.addEventListener('change', drawPathDebug);
+    if (els.dbgSvg)  els.dbgSvg.addEventListener('click', () => exportLoopsAsSVG(lastLoopsMM));
+    if (els.pathDebug){
+      new ResizeObserver(drawPathDebug).observe(els.pathDebug);
+    }
+    let currentImage = null;
+    els.pngInput.addEventListener('change', async (e) => {
+      const file = e.target.files[0];
+      if (!file) return;
+      const img = await loadImageFromFile(file);
+      currentImage = img;
+      drawPreview(img);
+      rebuildAll();
+    });
+
+    els.resetView.addEventListener('click', () => { if (currentMesh) fitCameraToObject(currentMesh, 1.2); });
+
+    els.exportSTL.addEventListener('click', () => {
+      if (!currentMesh){
+        setStatus('Nothing to export. Load an image first.', 'warn');
+        return;
+      }
+      const exporter = new STLExporter();
+      const data = exporter.parse(currentMesh, { binary: true });
+      const blob = new Blob([data], { type: 'application/octet-stream' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      const ts = new Date().toISOString().replace(/[:.]/g,'-');
+      a.download = `vase-${ts}.stl`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    });
+
+    // Debounced rebuild
+    let rebuildRAF = 0;
+    function tryRebuildFromImage(){
+      if (!currentImage) return;
+      cancelAnimationFrame(rebuildRAF);
+      rebuildRAF = requestAnimationFrame(rebuildAll);
+    }
+
+    function rebuildAll(){
+      if (!currentImage) { setStatus('Load a PNG to start.', 'info'); return; }
+
+      if (currentMesh){
+        scene.remove(currentMesh);
+        currentMesh.geometry.dispose();
+        currentMesh = null;
+      }
+
+      const geom = buildGeometryFromPNG(currentImage);
+      if (!geom){
+        setStatus('Failed to build geometry.', 'bad');
+        return;
+      }
+
+      currentMesh = new THREE.Mesh(geom, material);
+      // stand Z up along +Y
+      currentMesh.rotation.x = -Math.PI / 2;
+      scene.add(currentMesh);
+
+      baseGeometryPositions = geom.attributes.position.array.slice(0);
+      applyDeformation();
+      fitCameraToObject(currentMesh, 1.25);
+      updateStatusGeom(geom);
+      drawPathDebug();
+    }
+
+    // Bootstrap with a test circle
+    (function bootstrap(){
+      const temp = document.createElement('canvas');
+      temp.width = 256; temp.height = 256;
+      const ctx = temp.getContext('2d');
+      ctx.fillStyle = '#fff'; ctx.fillRect(0,0,256,256);
+      ctx.fillStyle = '#000';
+      ctx.beginPath(); ctx.arc(128,128,90,0,Math.PI*2); ctx.fill();
+      const img = new Image();
+      img.onload = () => {
+        currentImage = img;
+        drawPreview(img);
+        rebuildAll();
+      };
+      img.src = temp.toDataURL('image/png');
+    })();
+  </script>
+</body>
+</html>
